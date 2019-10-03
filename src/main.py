@@ -10,7 +10,7 @@ def main():
     wr = WorldReconstruction()
 
     # Generate the 3D shape 
-    wr.execute("input/i-0.mp4", "output/out.txt")
+    wr.execute("input/i-0.mp4", "output/out.txt", operation=0, max_frames=5, print_frames=True)
 
 
 main()
