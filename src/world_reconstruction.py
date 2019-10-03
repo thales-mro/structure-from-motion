@@ -18,33 +18,27 @@ class WorldReconstruction:
         self.sift = cv2.xfeatures2d.SIFT_create()
     
 
-    def execute(self, input_path, output_path, operation=2, compare_frame_by_frame=True, start_frame=-1, max_frames=-1, print_frames=False):
+    def execute(self, input_path, output_path, operation=2, start_frame=-1, max_frames=-1, print_frames=False):
         """
-        It executes the ar for a video file
+        It executes the reconstrution for a video file
 
         Keyword arguments:
         input_path -- the input video path
         output_path -- the output video path
         operation -- operation to apply on the frame
-        compare_frame_by_frame -- compare fram by frame
         start_frame -- starting video frame
         max_frames -- maximum number of frames to process
         print_frames -- flag to print the current frame
-        min_matches -- minimum number os matches to find the affine matrix
         """
 
-        # The accumulative affine matrix
-        a_all = None
+        # Parameters for KLT
+        lkt_params = dict(winSize=(15,15), maxLevel=0, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
 
         # Open the video
         video_capture = cv2.VideoCapture(input_path)
 
-        # Read frame 1
+        # Read the first frame
         success, current_frame = video_capture.read()
-
-        # Compute keypoints and descriptors of the previous frame
-        keypoints_previous_frame, descriptors_previous_frame = self.sift.detectAndCompute(
-            previous_frame, None)
         
         index_2 = 0
         while success and index_2 < start_frame:
@@ -53,110 +47,72 @@ class WorldReconstruction:
         
         index = 0
         
+        # Convert the frame to gray
+        previous_frame_gray = cv2.cvtColor(current_frame, cv2.COLOR_BGR2GRAY)
+
+        # Get the best corners
+        previous_corners = cv2.goodFeaturesToTrack(previous_frame_gray, maxCorners=100, qualityLevel=0.2, minDistance=10, useHarrisDetector=True)
+        
         # For each frame
         while success:
+    
+            print(f"Processing Frame {index}")
             
-            try:
+            # Read the second frame
+            success, current_frame = video_capture.read()
+        
+            # Convert the frame to gray
+            current_frame_gray = cv2.cvtColor(current_frame, cv2.COLOR_BGR2GRAY)
+            
+            # Recalculate the best corners every 5 frames
+            current_corners = cv2.goodFeaturesToTrack(current_frame_gray, maxCorners=100, qualityLevel=0.2, minDistance=7, useHarrisDetector=True)
 
-                print(f"Processing Frame {index}")
-
-                # Compute keypoints and descriptors of the current frame
-                keypoints_current_frame, descriptors_current_frame = self.sift.detectAndCompute(
-                    current_frame, None)
-
-                # Find the matches between the previous frame and the current frame
-                matches = self.matcher.match(descriptors_previous_frame, descriptors_current_frame, k=2)
+            # Calculate the optical flow with KLT
+            corners, st, _ = cv2.calcOpticalFlowPyrLK(previous_frame_gray, current_frame_gray, previous_corners, current_corners, **lkt_params)
+            
+            # Select the good points
+            good_current = corners[st==1]
+            good_previous = previous_corners[st==1]
+        
+        
+            if operation == 0:
                 
-                # Sort the matches based on the distance
-                matches.sort(key=lambda x: x.distance)
-
-                # If the matches are greate than the threshold
-                if len(matches) > min_matches:
-
-                    # Get the keypoints for each match
-                    previous_frame_points = np.float32(
-                        [keypoints_previous_frame[m.queryIdx].pt for m in matches])
-                    current_frame_points = np.float32(
-                        [keypoints_current_frame[m.trainIdx].pt for m in matches])
-
-                    # Find the affine matrix                     
-                    a = transform.get_affine_transform_matrix(previous_frame_points, current_frame_points)
-
-                    # Set the accumulative transformations
-                    if a_all is None or compare_frame_by_frame == False:
-                        a_all = np.vstack((a, [0,0,1]))
-                    elif np.sum(a) > 0:
-                        
-                        # Convert to homogeneous coordinates
-                        i = np.vstack((a, [0,0,1]))
-                        a_all = np.matmul(a_all, i)
-
-                    if operation == 0:
-                        
-                        # Convert to opencv match class
-                        matches_opencv = [cv2.DMatch(i.queryIdx, i.trainIdx, i.distance) for i in matches]
-                        
-                        # Draw the 20 matches
-                        output_frame = cv2.drawMatchesKnn(
-                            previous_frame.copy(), keypoints_previous_frame,
-                            current_frame.copy(), keypoints_current_frame,
-                            [matches_opencv], None, flags=2)
-
-                    elif operation == 1:
-                        img_aux = np.zeros_like(current_frame)
-                        cv2.drawKeypoints(current_frame, keypoints_current_frame, img_aux, flags=cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
-                        current_frame = img_aux
-                    elif operation == 2:
-                                            
-                        # Warp the source image
-                        source = self._warpAffine(self.source, a_all, (current_frame.shape[1], current_frame.shape[0]))
-                        
-                        # Warp the mask
-                        target_mask = self._warpAffine(self.initial_target_mask, a_all, (current_frame.shape[1], current_frame.shape[0]))
-
-                        # Convert it to gray scale
-                        target_mask_gray = cv2.cvtColor(target_mask, cv2.COLOR_BGR2GRAY)
-
-                        # Define the threshold to separate foreground from background
-                        _, mask = cv2.threshold(target_mask_gray, 150, 255, cv2.THRESH_BINARY_INV)
-
-                        # Get the inverted mask
-                        mask_inv = cv2.bitwise_not(mask)
-
-                        # Get the background image
-                        background = cv2.bitwise_and(current_frame, current_frame, mask=mask)
-
-                        # Get the foreground image
-                        foregound = cv2.bitwise_and(source, source, mask=mask_inv)
-
-                        # Add both images
-                        output_frame = cv2.add(background, foregound)
-
+                for i in np.int0(current_corners):
                     
-                    # Write each frame to a new video
-                    video_out.write(output_frame)
+                    # Get the point
+                    x, y = i.ravel()
                     
-                    # Save the current frame as an image
-                    if print_frames:
-                        cv2.imwrite(f"output/frame-{index}.jpg", output_frame)
+                    # Draw the circles
+                    output_frame = cv2.circle(current_frame, (x, y), 5, 255, -1)
 
-                    index += 1
-
-                    if max_frames > 0 and index > max_frames:
-                        break
-
-                # Set the previous frame
-                previous_frame = current_frame
-
-                if compare_frame_by_frame:
-                    # Set the previous keypoints and descriptors
-                    keypoints_previous_frame = keypoints_current_frame
-                    descriptors_previous_frame = descriptors_current_frame
-
-                # Read the next frame
-                success, current_frame = video_capture.read()
-
-                #transform.set_inliers_rate(0.75)
+            elif operation == 1:
+                        
+                # Draw the tracking
+                for i, (current, previous) in enumerate(zip(good_current, good_previous)):
+                    
+                    # Get the line params
+                    a, b = current.ravel()
+                    c, d = previous.ravel()
+                    
+                    # Draw the line
+                    output_frame = cv2.arrowedLine(current_frame, (c, d), (a, b), (255, 0, 0), 2, tipLength=0.3)
+            
+            elif operation == 2:
+                pass
+            
                 
-            except:
-                continue      
+            # Save the current frame as an image
+            if print_frames:
+                cv2.imwrite(f"output/frame-{index}.jpg", output_frame)
+
+            index += 1
+
+            if max_frames > 0 and index > max_frames:
+                break
+
+            # Set the previous values
+            previous_frame = current_frame
+            previous_corners = current_corners
+
+            # Read the next frame
+            success, current_frame = video_capture.read()

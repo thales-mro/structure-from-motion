@@ -9,9 +9,8 @@ before_script:
 
 stages:
   - build
-  - exec_frame
-  - exec_source
-  - report
+  - exec
+  #- report
 
 build:
   stage: build
@@ -21,35 +20,25 @@ build:
     paths:
       - bin/*
       
-# This stage executes our program
-exec_frame:
-  stage: exec_frame
+exec:
+  stage: exec
   script:
     # Note that instead of the makefile you can just call your executable here
-    - make exec_frame
-  artifacts:
-    paths:
-      - output/*
-      
-exec_source:
-  stage: exec_source
-  script:
-    # Note that instead of the makefile you can just call your executable here
-    - make exec_source
+    - make exec
   artifacts:
     paths:
       - output/*
 
-report:
-  image: adnrv/texlive:full
-  stage: report
-  script:
-    - ls
-    - cd report
-    - latexmk -pdf -pdflatex="pdflatex --shell-escape %O %S" report
-    # move the file to the root folder
-    - mv report.pdf ../
-  artifacts:
-    paths:
-      - output/*
-      - report.pdf
+#report:
+  #image: adnrv/texlive:full
+  #stage: report
+  #script:
+    #- ls
+    #- cd report
+    #- latexmk -pdf -pdflatex="pdflatex --shell-escape %O %S" report
+    #move the file to the root folder
+    #- mv report.pdf ../
+  #artifacts:
+    #paths:
+      #- output/*
+      #- report.pdf
