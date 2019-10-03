@@ -29,16 +29,16 @@ exec:
     paths:
       - output/*
 
-report:
-  image: adnrv/texlive:full
-  stage: report
-  script:
-    - ls
-    - cd report
-    - latexmk -pdf -pdflatex="pdflatex --shell-escape %O %S" report
-    # move the file to the root folder
-    - mv report.pdf ../
-  artifacts:
-    paths:
-      - output/*
-      - report.pdf
+#report:
+  #image: adnrv/texlive:full
+  #stage: report
+  #script:
+    #- ls
+    #- cd report
+    #- latexmk -pdf -pdflatex="pdflatex --shell-escape %O %S" report
+    #move the file to the root folder
+    #- mv report.pdf ../
+  #artifacts:
+    #paths:
+      #- output/*
+      #- report.pdf
