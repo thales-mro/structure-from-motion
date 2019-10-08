@@ -50,37 +50,40 @@ class KLT:
         # Select the neighborhood around the keypoint on the gradient image
         neighborhood = previous_image[y-h:y+h+1, x-w:x+w+1]
         
-        x_diff, y_diff = np.gradient(neighborhood)
+        #take only complete regions
+        if neighborhood.shape == self.size:
+
+            x_diff, y_diff = np.gradient(neighborhood)
     
-        # Compute the gradient
-        gradients = np.array([x_diff.flatten(), y_diff.flatten()])
-        
-        # Compute A*A.T
-        z = np.dot(gradients, gradients.T)
-        
-        # Find the pseudo inverse
-        z_inverse = np.linalg.pinv(z)
+            # Compute the gradient
+            gradients = np.array([x_diff.flatten(), y_diff.flatten()])
+            
+            # Compute A*A.T
+            z = np.dot(gradients, gradients.T)
+            
+            # Find the pseudo inverse
+            z_inverse = np.linalg.pinv(z)
 
-        iteration = 0
+            iteration = 0
 
-        while iteration < self.max_iteration:
-            
-            iteration += 1
-            
-            # Get the current window
-            t_win = current_image[y-w:y+w+1, x-h:x+h+1]
-                        
-            # Compute the difference
-            i_k = (neighborhood - t_win).flatten()
-
-            b = -1 * np.dot(gradients, i_k)
-            
-            n = np.dot(z_inverse, b)
-            
-            v += n
+            while iteration < self.max_iteration:
                 
-            if np.sqrt(n[0]**2 + n[1]**2) <= self.min_error:
-                break
+                iteration += 1
+                
+                # Get the current window
+                t_win = current_image[y-w:y+w+1, x-h:x+h+1]
+                            
+                # Compute the difference
+                i_k = (neighborhood - t_win).flatten()
+
+                b = -1 * np.dot(gradients, i_k)
+                
+                n = np.dot(z_inverse, b)
+                
+                v += n
+                    
+                if np.sqrt(n[0]**2 + n[1]**2) <= self.min_error:
+                    break
  
         
         return v
