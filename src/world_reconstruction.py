@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 from klt import KLT
+from math import sqrt
 
 
 class WorldReconstruction:
@@ -32,7 +33,7 @@ class WorldReconstruction:
         """
 
         # Parameters for KLT
-        lkt_params = dict(winSize=(15,15), maxLevel=0, criteria=(cv2.TERM_CRITERIA_COUNT | cv2.TERM_CRITERIA_EPS, 10, 0.03))
+        #lkt_params = dict(winSize=(15,15), maxLevel=0, criteria=(cv2.TERM_CRITERIA_COUNT | cv2.TERM_CRITERIA_EPS, 1, 0.01))
         
         index = 1
         
@@ -57,18 +58,17 @@ class WorldReconstruction:
             current_frame_gray = cv2.cvtColor(current_frame, cv2.COLOR_BGR2GRAY)
             
             # Get the current frame keypoints
-            current_keypoints = cv2.goodFeaturesToTrack(current_frame_gray, maxCorners=10, qualityLevel=0.5, minDistance=1, useHarrisDetector=True)
+            current_keypoints = cv2.goodFeaturesToTrack(current_frame_gray, maxCorners=30, qualityLevel=0.2, minDistance=0.5, useHarrisDetector=True)
             
             # If the previous frame is not set
             if previous_frame_gray is not None:
 
-                # Calculate the optical flow with KLT
-                keypoints_opencv, st, _ = cv2.calcOpticalFlowPyrLK(previous_frame_gray, current_frame_gray, previous_keypoints, None, **lkt_params)
-                keypoints_opencv = keypoints_opencv[st==1]
-                keypoints = self.klt.calc(previous_frame_gray, current_frame_gray, previous_keypoints)
+                # Calculate the optical flow with opencv
+                #keypoints_opencv, st, _ = cv2.calcOpticalFlowPyrLK(previous_frame_gray, current_frame_gray, previous_keypoints, None, **lkt_params)
+                #keypoints_opencv = keypoints_opencv[st==1]
                 
-                #print(keypoints_opencv)
-                #print(keypoints)
+                # Calculate the optical flow with KLT
+                keypoints = self.klt.calc(previous_frame_gray, current_frame_gray, previous_keypoints)
             
                 if operation == 0:
                     
@@ -81,38 +81,21 @@ class WorldReconstruction:
                         output_frame = cv2.circle(current_frame, (x, y), 5, 255, -1)
 
                 elif operation == 1:
-                            
-                    # Draw the tracking
-                    for previous, current in zip(previous_keypoints, keypoints_opencv):
-                        
-                        # Get the line params
-                        a, b = previous.ravel()
-                        c, d = current.ravel()
-                        
-                        if c - a >= 0:
-                            c = int(c*1.2)
-                        else:
-                            c = int(c//1.2)
-                            
-                        if d - b >= 0:
-                            d = int(d*1.2)
-                        else:
-                            d = int(d//1.2)
-                         
-                        if c < 0 or d > current_frame.shape[1]:
-                            continue
-                        
-                        # Draw the line
-                        output_frame = cv2.arrowedLine(current_frame, (a, b), (c, d), (255, 255, 255), 2, tipLength=0.5)
+                    
+                    # Draw our flow
+                    output_frame = self.plot_flow(current_frame, previous_keypoints, keypoints, (0, 0, 255))
+                    
+                    # Draw opencv flow
+                    #output_frame = self.plot_flow(current_frame, previous_keypoints, keypoints_opencv, (255, 255, 255), output_frame)
                 
                 elif operation == 2:
                     pass
                 
                 
                 # Save the current frame as an image
-                if print_frames and index%3 == 0:
-                    cv2.imwrite(f"output/frame-{index}_open.jpg", output_frame)
-
+                if print_frames:
+                    cv2.imwrite(f"output/frame-{index}.jpg", output_frame)
+                            
             index += 1
 
             if max_frames > 0 and index > max_frames:
@@ -120,7 +103,37 @@ class WorldReconstruction:
 
             # Set the previous values
             previous_frame_gray = current_frame_gray
+            
+            # Update the keypoints
             previous_keypoints = current_keypoints
 
             # Read the next frame
             success, current_frame = video_capture.read()
+
+
+    def plot_flow(self, current_frame, previous_keypoints, keypoints, color=(255, 255, 255), output_frame=None):
+                    
+        for previous, current in zip(previous_keypoints, keypoints):
+            
+            # Get the line params
+            a, b = previous.ravel()
+            c, d = current.ravel()
+            
+            if a - c > 0:
+                c = int(c*1.2)
+            else:
+                c = int(c//1.2)
+                
+            if b - d > 0:
+                d = int(d*1.2)
+            else:
+                d = int(d//1.2)
+                
+            if c < 0 or c > current_frame.shape[1] or d < 0 or d > current_frame.shape[1]:
+                continue
+            
+            # Draw the line
+            output_frame = cv2.arrowedLine(current_frame,  (a,b), (c,d), color, 2, tipLength=0.5)
+                
+            
+        return output_frame
