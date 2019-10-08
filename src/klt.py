@@ -2,105 +2,85 @@ import cv2
 import numpy as np
 from scipy import ndimage, interpolate
 
+
 class KLT:
     """
     A class used to calculate the optical flow using KLT method
 
     Methods
     -------
-    calc(input_path, output_path, operation)
-        Execeute the 3D reconstruction operation on a video
+    calc(size, max_iteration, min_error)
+        Find the optical flow
     """
 
-
-    def __init__(self, size=(15, 15)):
+    def __init__(self, size=(15, 15), max_iteration=10, min_error=0.01):
         self.size = size
+        self.max_iteration = max_iteration
+        self.min_error = min_error
 
     def calc(self, previous_image, current_image, keypoints):
 
         output_points = []
-                
-        # Normalize images
-        previous_image = previous_image/np.amax(previous_image)
-        current_image = current_image/np.amax(current_image)
         
+        # Normalize the images
+        previous_image = previous_image/255
+        current_image = current_image/255
+
         # Reshape the keypoints
         keypoints = np.int0(keypoints.reshape(-1, 2))
         
         for x, y in keypoints:
             
-            try:
-            
-                # Find the optical flow
-                u, v = self._calc_optical_flow(previous_image, current_image, x, y)
-            
-                output_points.append([x+u, y+v])
-            except:
-                continue
+            # Find the optical flow
+            u, v = self._calc_optical_flow(previous_image, current_image, x, y)
+        
+            output_points.append([x+v, y+u])
+    
             
         return np.float32(output_points)
 
     def _calc_optical_flow(self, previous_image, current_image, x, y):
-    
-        d = np.array([0., 0.])
 
+        v = np.array([0., 0.])
+            
         # Create the region around the keypoint
         w = self.size[0]//2
         h = self.size[1]//2
         
-        # Select the neighborhood around the keypoint
-        neighborhood = previous_image[x-(w+1):x+w, y-h:y+(h+1)]
-
-        # Define the kernels
-        kernel_x = np.array([[1,0,-1],[2,0,-2],[1,0,-1]])
-        kernel_y = np.array([[1,2,1] ,[0,0,0], [-1,-2,-1]])
-
-        # Compute the convolutions
-        x_diff = ndimage.convolve(neighborhood, kernel_y).flatten()
-        y_diff = ndimage.convolve(neighborhood, kernel_x).flatten()
-
+        # Select the neighborhood around the keypoint on the gradient image
+        neighborhood = previous_image[y-h:y+h+1, x-w:x+w+1]
+        
+        x_diff, y_diff = np.gradient(neighborhood)
+    
         # Compute the gradient
-        gradients = np.array([x_diff, y_diff])
+        gradients = np.array([x_diff.flatten(), y_diff.flatten()])
         
         # Compute A*A.T
         z = np.dot(gradients, gradients.T)
         
-        if np.linalg.det(z) == 0:
-            return d
-        
-        # Find the inverse
-        z_inverse = np.linalg.inv(z)
-
-        # Create the interpolation sizes
-        current_frame_x = np.arange(0, current_image.shape[0])
-        current_frame_y = np.arange(0, current_image.shape[1])
-        
-        # Interpolate the current frame
-        current_image_interpolated = interpolate.interp2d(current_frame_y, current_frame_x, current_image, kind='cubic')
-
-        # The window to evaluate
-        win_x = np.arange(x-(w+1), x+w, dtype=np.float32)
-        win_y = np.arange(y-h, y+(h+1), dtype=np.float32)
+        # Find the pseudo inverse
+        z_inverse = np.linalg.pinv(z)
 
         iteration = 0
-        
-        while iteration < 10:
+
+        while iteration < self.max_iteration:
             
             iteration += 1
-
+            
             # Get the current window
-            t_win = current_image_interpolated(win_y + d[1], win_x + d[0])
+            t_win = current_image[y-w:y+w+1, x-h:x+h+1]
                         
             # Compute the difference
-            b = (neighborhood - t_win).flatten()
+            i_k = (neighborhood - t_win).flatten()
 
-            e = -1 * np.dot(gradients, b)
+            b = -1 * np.dot(gradients, i_k)
             
-            d_ = np.dot(z_inverse, e)
+            n = np.dot(z_inverse, b)
             
-            d += d_
-            
-            if np.hypot(d_[0], d_[1]) <= 0.03:
+            v += n
+                
+            if np.sqrt(n[0]**2 + n[1]**2) <= self.min_error:
                 break
-
-        return d
+ 
+        
+        return v
